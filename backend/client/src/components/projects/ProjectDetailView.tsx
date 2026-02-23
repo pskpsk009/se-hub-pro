@@ -20,6 +20,8 @@ import {
   AlertCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { auth } from "@/lib/firebase";
+import { downloadProjectFile } from "@/services/projectApi";
 
 interface User {
   id: string;
@@ -319,12 +321,48 @@ export const ProjectDetailView = ({ projectId, user, onBack, projects, onProject
                       <FileText className="w-8 h-8 text-gray-400" />
                       <div>
                         <p className="font-medium text-gray-900">{file.name}</p>
-                        <p className="text-sm text-gray-500">{file.size} • {file.type}</p>
+                        <p className="text-sm text-gray-500">
+                          {file.size} • {file.type}
+                          {file.downloadable === false && (
+                            <span className="ml-2 text-amber-500">(metadata only)</span>
+                          )}
+                        </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={file.downloadable === false}
+                      onClick={async () => {
+                        if (file.downloadable === false) {
+                          toast({
+                            title: "File not available",
+                            description: "This file record is metadata only — the actual file was not uploaded to storage.",
+                          });
+                          return;
+                        }
+                        try {
+                          const token = await auth.currentUser?.getIdToken();
+                          if (!token) {
+                            toast({
+                              title: "Authentication required",
+                              description: "Please sign in to download files.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          await downloadProjectFile(project.id, file.name, token);
+                        } catch {
+                          toast({
+                            title: "Download failed",
+                            description: "Unable to download the file. It may not have been uploaded yet.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
                       <Download className="w-4 h-4 mr-2" />
-                      Download
+                      {file.downloadable === false ? "Unavailable" : "Download"}
                     </Button>
                   </div>
                 ))}

@@ -38,6 +38,7 @@ import {
   updateProjectGrade,
   updateProjectFeedback,
   updateProjectStatus,
+  downloadProjectFile,
 } from "@/services/projectApi";
 
 interface User {
@@ -196,12 +197,9 @@ export const ProjectDetailView = ({
     } else {
       setReviewFeedback("");
     }
-  }, [
-    project.id,
-    project.feedback?.advisor,
-    project.feedback?.coordinator,
-    user.role,
-  ]);
+    // Only re-initialize when switching projects or roles, not after saving
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, user.role]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -679,12 +677,51 @@ export const ProjectDetailView = ({
                         <p className="font-medium text-gray-900">{file.name}</p>
                         <p className="text-sm text-gray-500">
                           {file.size} • {file.type}
+                          {file.downloadable === false && (
+                            <span className="ml-2 text-amber-500">(metadata only)</span>
+                          )}
                         </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={file.downloadable === false}
+                      onClick={async () => {
+                        if (file.downloadable === false) {
+                          toast({
+                            title: "File not available",
+                            description:
+                              "This file record is metadata only — the actual file was not uploaded to storage.",
+                          });
+                          return;
+                        }
+                        if (!authToken) {
+                          toast({
+                            title: "Authentication required",
+                            description: "Please sign in to download files.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        try {
+                          await downloadProjectFile(
+                            project.id,
+                            file.name,
+                            authToken,
+                          );
+                        } catch {
+                          toast({
+                            title: "Download failed",
+                            description:
+                              "Unable to download the file. It may not have been uploaded yet.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
                       <Download className="w-4 h-4 mr-2" />
-                      Download
+                      {file.downloadable === false ? "Unavailable" : "Download"}
                     </Button>
                   </div>
                 ))}

@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import multer from "multer";
 import { AuthedRequest, verifyFirebaseAuth } from "../middleware/auth";
 import {
   createProjectRecord,
@@ -21,6 +22,9 @@ import {
 } from "../services/projectService";
 import { findUserByEmail, UserRecord } from "../services/userService";
 import { getSupabaseClient } from "../services/supabaseClient";
+import { uploadFile, downloadFile } from "../services/storage";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const projectsRouter = Router();
 
@@ -262,7 +266,7 @@ const pickAdvisorFromMembers = (
 };
 
 const formatProjectResponse = (record: ProjectWithRelations) => {
-  const { project, advisor, students, metadata, links } = record;
+  const { project, advisor, students, metadata, links, uploadedFiles } = record;
 
   const parsedMetadata: ProjectMetadata = metadata ?? {};
   const keywords = Array.isArray(parsedMetadata.keywords)
@@ -279,11 +283,52 @@ const formatProjectResponse = (record: ProjectWithRelations) => {
           typeof member.email === "string",
       )
     : [];
-  const files = Array.isArray(parsedMetadata.files)
+
+  // Build files list: start with metadata files, then enrich with file table data
+  const metadataFiles = Array.isArray(parsedMetadata.files)
     ? parsedMetadata.files.filter(
         (file) => typeof file === "object" && file !== null,
       )
     : [];
+
+  // Build a lookup of file_link → true for files in the file table
+  const fileTablePaths = new Set(
+    (uploadedFiles ?? []).map((f) => f.file_link),
+  );
+
+  // Merge: mark metadata files as downloadable if they have a storagePath in file table
+  const files = metadataFiles.map((f: any) => {
+    const hasStorage = !!(
+      f.storagePath && fileTablePaths.has(f.storagePath)
+    );
+    return {
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      storagePath: f.storagePath ?? null,
+      downloadable: hasStorage,
+    };
+  });
+
+  // Also add any file table entries not already represented in metadata
+  for (const dbFile of uploadedFiles ?? []) {
+    const alreadyListed = files.some(
+      (f: any) => f.storagePath === dbFile.file_link,
+    );
+    if (!alreadyListed) {
+      const fileName = dbFile.file_link.split("/").pop() ?? dbFile.file_link;
+      // Strip timestamp prefix (e.g., "1234567890_filename.pdf" -> "filename.pdf")
+      const cleanName = fileName.replace(/^\d+_/, "");
+      files.push({
+        name: cleanName,
+        size: undefined,
+        type: undefined,
+        storagePath: dbFile.file_link,
+        downloadable: true,
+      });
+    }
+  }
+
   const metadataGrade =
     typeof parsedMetadata.grade === "string" ? parsedMetadata.grade : null;
 
@@ -1159,6 +1204,252 @@ projectsRouter.get(
       console.error("[GET /projects/archive] unhandled error:", err);
       res.status(500).json({
         error: err instanceof Error ? err.message : "Internal server error",
+      });
+    }
+  },
+);
+
+/* ------------------------------------------------------------------ */
+/*  FILE UPLOAD — POST /projects/:id/files                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @openapi
+ * /projects/{id}/files:
+ *   post:
+ *     summary: Upload one or more files for a project
+ *     tags:
+ *       - Projects
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       '200':
+ *         description: Files uploaded successfully
+ */
+projectsRouter.post(
+  "/:id/files",
+  verifyFirebaseAuth,
+  upload.array("files", 10),
+  async (req: AuthedRequest, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id, 10);
+
+      if (Number.isNaN(projectId)) {
+        res.status(400).json({ error: "Invalid project id." });
+        return;
+      }
+
+      const uploadedFiles = req.files as Express.Multer.File[] | undefined;
+
+      if (!uploadedFiles || uploadedFiles.length === 0) {
+        res.status(400).json({ error: "No files provided." });
+        return;
+      }
+
+      // Verify the project exists
+      const projectResult = await getProjectById(projectId);
+      if (projectResult.error || !projectResult.data || projectResult.data.length === 0) {
+        res.status(404).json({ error: "Project not found." });
+        return;
+      }
+
+      const uploadedFileSummaries: Array<{
+        name: string;
+        size: string;
+        type: string;
+        storagePath: string;
+      }> = [];
+
+      for (const file of uploadedFiles) {
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `projects/${projectId}/${Date.now()}_${safeName}`;
+
+        await uploadFile(storagePath, file.buffer, file.mimetype);
+
+        uploadedFileSummaries.push({
+          name: file.originalname,
+          size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+          type: file.mimetype.split("/")[1]?.toUpperCase() ?? "FILE",
+          storagePath,
+        });
+      }
+
+      // Update project metadata with the file information
+      const record = projectResult.data[0];
+      const existingMetadata: ProjectMetadata = record.metadata ?? {};
+      const existingFiles = Array.isArray(existingMetadata.files)
+        ? existingMetadata.files
+        : [];
+
+      // Replace metadata entries that match by name, keep the rest
+      const uploadedNames = new Set(uploadedFileSummaries.map((f) => f.name));
+      const keptFiles = existingFiles.filter(
+        (f: any) => !uploadedNames.has(f.name),
+      );
+      const updatedFiles = [...keptFiles, ...uploadedFileSummaries];
+      const updatedMetadata = { ...existingMetadata, files: updatedFiles };
+
+      const supabase = getSupabaseClient();
+      await supabase
+        .from("project")
+        .update({ comment_student: JSON.stringify(updatedMetadata) })
+        .eq("id", projectId);
+
+      // Also insert into the file table for each uploaded file
+      const fileTableRecords = uploadedFileSummaries.map((f) => ({
+        project_id: projectId,
+        file_link: f.storagePath,
+      }));
+      await supabase.from("file").insert(fileTableRecords);
+
+      res.json({ files: uploadedFileSummaries });
+    } catch (err) {
+      console.error("[POST /projects/:id/files] error:", err);
+      res.status(500).json({
+        error: err instanceof Error ? err.message : "Upload failed.",
+      });
+    }
+  },
+);
+
+/* ------------------------------------------------------------------ */
+/*  FILE DOWNLOAD — GET /projects/:id/files/:filename                 */
+/*  Accessible by ANY authenticated user (all roles)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @openapi
+ * /projects/{id}/files/{filename}:
+ *   get:
+ *     summary: Download a project attachment file (any authenticated role)
+ *     tags:
+ *       - Projects
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: filename
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: File content
+ *       '404':
+ *         description: File not found
+ */
+projectsRouter.get(
+  "/:id/files/:filename",
+  verifyFirebaseAuth,
+  async (req: AuthedRequest, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id, 10);
+      const requestedFilename = decodeURIComponent(req.params.filename);
+
+      if (Number.isNaN(projectId)) {
+        res.status(400).json({ error: "Invalid project id." });
+        return;
+      }
+
+      // Fetch project to find the file's storage path
+      const projectResult = await getProjectById(projectId);
+      if (projectResult.error || !projectResult.data || projectResult.data.length === 0) {
+        res.status(404).json({ error: "Project not found." });
+        return;
+      }
+
+      const record = projectResult.data[0];
+      const metadata: ProjectMetadata = record.metadata ?? {};
+      const metadataFiles = Array.isArray(metadata.files) ? metadata.files : [];
+
+      // 1. Try finding the file via storagePath in metadata
+      let storagePath: string | null = null;
+
+      const metadataEntry = metadataFiles.find(
+        (f: any) => f.name === requestedFilename && f.storagePath,
+      );
+      if (metadataEntry && (metadataEntry as any).storagePath) {
+        storagePath = (metadataEntry as any).storagePath as string;
+      }
+
+      // 2. Fall back to the file table
+      if (!storagePath) {
+        const supabase = getSupabaseClient();
+        const { data: fileRows } = await supabase
+          .from("file")
+          .select("file_link")
+          .eq("project_id", projectId);
+
+        if (fileRows && fileRows.length > 0) {
+          // Match by original filename (file_link ends with _<filename>)
+          const match = fileRows.find((row: any) => {
+            const link = row.file_link as string;
+            const fileName = link.split("/").pop() ?? "";
+            const cleanName = fileName.replace(/^\d+_/, "");
+            return cleanName === requestedFilename;
+          });
+          if (match) {
+            storagePath = match.file_link;
+          }
+        }
+      }
+
+      if (!storagePath) {
+        res.status(404).json({ error: "File not found. It may not have been uploaded to storage yet." });
+        return;
+      }
+      const blob = await downloadFile(storagePath);
+
+      // Convert Blob to Buffer
+      const arrayBuffer = await blob.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Determine content type from the storage path or file entry
+      const ext = storagePath.split(".").pop()?.toLowerCase();
+      const contentTypes: Record<string, string> = {
+        pdf: "application/pdf",
+        doc: "application/msword",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ppt: "application/vnd.ms-powerpoint",
+        pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        zip: "application/zip",
+      };
+      const contentType = contentTypes[ext ?? ""] ?? "application/octet-stream";
+
+      res.setHeader("Content-Type", contentType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${encodeURIComponent(requestedFilename)}"`,
+      );
+      res.setHeader("Content-Length", buffer.length.toString());
+      res.send(buffer);
+    } catch (err) {
+      console.error("[GET /projects/:id/files/:filename] error:", err);
+      res.status(500).json({
+        error: err instanceof Error ? err.message : "Download failed.",
       });
     }
   },

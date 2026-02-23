@@ -38,6 +38,8 @@ export interface ProjectFileSummary {
   name: string;
   size?: string;
   type?: string;
+  storagePath?: string | null;
+  downloadable?: boolean;
 }
 
 export interface ProjectDto {
@@ -303,4 +305,69 @@ export const updateProject = async (
   }
 
   return body.project;
+};
+
+/**
+ * Upload actual files for a project to Supabase Storage via the backend.
+ */
+export const uploadProjectFiles = async (
+  projectId: number,
+  files: File[],
+  token: string,
+): Promise<ProjectFileSummary[]> => {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+
+  const response = await fetch(buildUrl(`/projects/${projectId}/files`), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const message =
+      body && typeof body === "object" && "error" in body
+        ? (body as { error: string }).error
+        : "File upload failed";
+    throw new ApiError(message, response.status, body);
+  }
+
+  const body = await response.json();
+  return body.files ?? [];
+};
+
+/**
+ * Download a project attachment file. Any authenticated user can download.
+ */
+export const downloadProjectFile = async (
+  projectId: number,
+  filename: string,
+  token: string,
+): Promise<void> => {
+  const response = await fetch(
+    buildUrl(`/projects/${projectId}/files/${encodeURIComponent(filename)}`),
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiError("Download failed", response.status);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
 };

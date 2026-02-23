@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   submitProject,
   updateProject,
+  uploadProjectFiles,
   type CreateProjectPayload,
   type UpdateProjectPayload,
   type ProjectDto,
@@ -173,6 +174,7 @@ export const ProjectSubmissionForm = ({
 
   const [newKeyword, setNewKeyword] = useState("");
   const [newLink, setNewLink] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => [
     buildSubmitterMember(),
   ]);
@@ -280,7 +282,18 @@ export const ProjectSubmissionForm = ({
         throw new Error("Missing authentication token.");
       }
 
-      return submitProject(payload, authToken);
+      const project = await submitProject(payload, authToken);
+
+      // Upload actual files to storage after project is created
+      if (pendingFiles.length > 0) {
+        try {
+          await uploadProjectFiles(project.id, pendingFiles, authToken);
+        } catch (err) {
+          console.error("File upload failed:", err);
+        }
+      }
+
+      return project;
     },
     onSuccess: (project, variables) => {
       toast({
@@ -296,6 +309,7 @@ export const ProjectSubmissionForm = ({
       void queryClient.invalidateQueries({ queryKey: ["projects", authToken] });
       setFormData(createInitialFormState());
       setTeamMembers([buildSubmitterMember()]);
+      setPendingFiles([]);
       setNewKeyword("");
       setNewLink("");
       setNewTeamMember({ name: "", email: "", role: "student" });
@@ -319,7 +333,18 @@ export const ProjectSubmissionForm = ({
   >({
     mutationFn: async ({ projectId, payload }) => {
       if (!authToken) throw new Error("Missing authentication token.");
-      return updateProject(projectId, payload, authToken);
+      const project = await updateProject(projectId, payload, authToken);
+
+      // Upload actual files to storage after project is updated
+      if (pendingFiles.length > 0) {
+        try {
+          await uploadProjectFiles(project.id, pendingFiles, authToken);
+        } catch (err) {
+          console.error("File upload failed:", err);
+        }
+      }
+
+      return project;
     },
     onSuccess: (project, variables) => {
       toast({
@@ -431,6 +456,9 @@ export const ProjectSubmissionForm = ({
       size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
       type: file.type.split("/")[1].toUpperCase(),
     }));
+
+    // Keep the raw File objects for actual upload later
+    setPendingFiles((prev) => [...prev, ...validFiles]);
 
     setFormData((prev) => ({
       ...prev,
@@ -1184,6 +1212,9 @@ export const ProjectSubmissionForm = ({
                             ...prev,
                             files: prev.files.filter((_, i) => i !== index),
                           }));
+                          setPendingFiles((prev) =>
+                            prev.filter((_, i) => i !== index)
+                          );
                         }}
                       >
                         Remove

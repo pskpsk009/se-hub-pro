@@ -22,6 +22,8 @@ export interface ApiProjectFile {
   name: string;
   size?: string;
   type?: string;
+  storagePath?: string | null;
+  downloadable?: boolean;
 }
 
 export interface ApiProjectStudent {
@@ -111,4 +113,37 @@ export const fetchProjects = async (token: string): Promise<ApiProject[]> => {
   }
 
   return (body.projects ?? []).filter((project): project is ApiProject => Boolean(project));
+};
+
+/**
+ * Download a project attachment file. Any authenticated user can download.
+ */
+export const downloadProjectFile = async (
+  projectId: number | string,
+  filename: string,
+  token: string,
+): Promise<void> => {
+  const response = await fetch(
+    buildUrl(`/projects/${projectId}/files/${encodeURIComponent(filename)}`),
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiError("Download failed", response.status);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
 };

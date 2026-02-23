@@ -89,9 +89,15 @@ export interface ProjectMetadata {
   award?: string;
   courseCode?: string;
   completionDate?: string;
-  files?: Array<{ name: string; size?: string; type?: string }>;
+  files?: Array<{ name: string; size?: string; type?: string; storagePath?: string }>;
   grade?: string;
   [key: string]: unknown;
+}
+
+export interface FileRecord {
+  id: number;
+  project_id: number;
+  file_link: string;
 }
 
 export interface ProjectWithRelations {
@@ -100,6 +106,7 @@ export interface ProjectWithRelations {
   students: UserRecord[];
   metadata: ProjectMetadata | null;
   links: string[];
+  uploadedFiles: FileRecord[];
 }
 
 export interface ProjectQueryResult {
@@ -280,6 +287,19 @@ const hydrateProjectsWithRelations = async (
     linksMap.set(record.project_id, existing);
   });
 
+  // Query uploaded files from the file table
+  const filesResponse = await supabase
+    .from("file")
+    .select("id, project_id, file_link")
+    .in("project_id", projectIds);
+
+  const uploadedFilesMap = new Map<number, FileRecord[]>();
+  (filesResponse.data ?? []).forEach((record: FileRecord) => {
+    const existing = uploadedFilesMap.get(record.project_id) ?? [];
+    existing.push(record);
+    uploadedFilesMap.set(record.project_id, existing);
+  });
+
   const teamMembersMap = new Map<number, UserRecord[]>();
   (teamMembersResponse.data ?? []).forEach((record) => {
     const student = userMap.get(record.student_id);
@@ -300,6 +320,7 @@ const hydrateProjectsWithRelations = async (
     students: teamMembersMap.get(project.id) ?? [],
     metadata: parseMetadata(project.comment_student),
     links: linksMap.get(project.id) ?? [],
+    uploadedFiles: uploadedFilesMap.get(project.id) ?? [],
   }));
 
   return { data, error: null };
