@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, Eye, Save, X } from "lucide-react";
+import { Plus, Edit, Trash2, Eye, Save, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  fetchRubrics,
+  createRubric,
+  updateRubric,
+  deleteRubric as deleteRubricApi,
+  toggleRubricStatus as toggleRubricStatusApi,
+  type RubricDto,
+  type CriterionInput,
+} from "@/services/rubricApi";
 
 interface PLO {
   id: string;
@@ -35,18 +44,6 @@ interface RubricLevel {
   points: number;
 }
 
-interface Rubric {
-  id: string;
-  name: string;
-  description: string;
-  projectTypes: string[];
-  criteria: RubricCriterion[];
-  maxPoints: number;
-  createdBy: string;
-  createdAt: string;
-  isActive: boolean;
-}
-
 interface User {
   id: string;
   name: string;
@@ -56,6 +53,7 @@ interface User {
 
 interface RubricManagementProps {
   user: User;
+  authToken: string | null;
 }
 
 // Sample PLOs data
@@ -68,62 +66,74 @@ const samplePLOs: PLO[] = [
   { id: "plo6", code: "PLO6", description: "Analyze local and global impact of computing on individuals and society", category: "Ethics" }
 ];
 
-// Sample rubrics data
-const sampleRubrics: Rubric[] = [
-  {
-    id: "1",
-    name: "Capstone Project Evaluation",
-    description: "Comprehensive evaluation rubric for final year capstone projects",
-    projectTypes: ["Capstone"],
-    criteria: [
-      {
-        id: "c1",
-        name: "Technical Implementation",
-        description: "Quality of technical solution and code implementation",
-        ploIds: ["plo1", "plo3"],
-        weight: 30,
-        levels: [
-          { id: "l1", name: "Excellent", description: "Exceptional technical implementation", points: 4 },
-          { id: "l2", name: "Good", description: "Good technical implementation", points: 3 },
-          { id: "l3", name: "Satisfactory", description: "Adequate technical implementation", points: 2 },
-          { id: "l4", name: "Needs Improvement", description: "Poor technical implementation", points: 1 }
-        ]
-      },
-      {
-        id: "c2",
-        name: "Problem Analysis",
-        description: "Ability to analyze and define project requirements",
-        ploIds: ["plo2"],
-        weight: 25,
-        levels: [
-          { id: "l1", name: "Excellent", description: "Thorough problem analysis", points: 4 },
-          { id: "l2", name: "Good", description: "Good problem analysis", points: 3 },
-          { id: "l3", name: "Satisfactory", description: "Basic problem analysis", points: 2 },
-          { id: "l4", name: "Needs Improvement", description: "Unclear problem analysis", points: 1 }
-        ]
-      }
-    ],
-    maxPoints: 100,
-    createdBy: "coordinator@university.edu",
-    createdAt: "2024-01-15",
-    isActive: true
-  }
-];
+// Helper to convert API RubricDto to local view format
+const toLocalRubric = (dto: RubricDto) => ({
+  id: dto.id.toString(),
+  name: dto.name,
+  description: dto.description ?? "",
+  projectTypes: dto.project_types,
+  criteria: dto.criteria.map((c) => ({
+    id: c.id.toString(),
+    name: c.name,
+    description: c.description ?? "",
+    ploIds: c.plo_ids,
+    weight: c.weight,
+    levels: c.levels.map((l) => ({
+      id: l.id.toString(),
+      name: l.name,
+      description: l.description ?? "",
+      points: l.points,
+    })),
+  })),
+  maxPoints: dto.max_points,
+  createdBy: dto.created_by,
+  createdAt: dto.created_at?.split("T")[0] ?? "",
+  isActive: dto.is_active,
+});
 
-export const RubricManagement = ({ user }: RubricManagementProps) => {
+type LocalRubric = ReturnType<typeof toLocalRubric>;
+
+export const RubricManagement = ({ user, authToken }: RubricManagementProps) => {
   const { toast } = useToast();
-  const [rubrics, setRubrics] = useState<Rubric[]>(sampleRubrics);
-  const [selectedRubric, setSelectedRubric] = useState<Rubric | null>(null);
+  const [rubrics, setRubrics] = useState<LocalRubric[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [selectedRubric, setSelectedRubric] = useState<LocalRubric | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("list");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [newRubric, setNewRubric] = useState<Partial<Rubric>>({
+  const [newRubric, setNewRubric] = useState<Partial<{ name: string; description: string; projectTypes: string[]; criteria: RubricCriterion[] }>>({
     name: "",
     description: "",
     projectTypes: [],
     criteria: []
   });
+
+  // ── Load rubrics from API ────────────────────────────────────────────
+  const loadRubrics = useCallback(async () => {
+    if (!authToken) return;
+    setIsLoading(true);
+    setSetupRequired(false);
+    try {
+      const data = await fetchRubrics(authToken);
+      setRubrics(data.map(toLocalRubric));
+    } catch (err: any) {
+      const msg: string = err.message ?? "";
+      if (msg.toLowerCase().includes("migration") || msg.toLowerCase().includes("setup") || msg.toLowerCase().includes("not been created")) {
+        setSetupRequired(true);
+      } else {
+        toast({ title: "Error", description: msg || "Failed to load rubrics", variant: "destructive" });
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [authToken, toast]);
+
+  useEffect(() => {
+    void loadRubrics();
+  }, [loadRubrics]);
 
   const [newCriterion, setNewCriterion] = useState<Partial<RubricCriterion>>({
     name: "",
@@ -178,7 +188,7 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
     });
   };
 
-  const saveRubric = () => {
+  const saveRubric = async () => {
     if (!newRubric.name || !newRubric.description || !newRubric.criteria?.length) {
       toast({
         title: "Error",
@@ -198,56 +208,93 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
       return;
     }
 
-    const rubric: Rubric = {
-      id: isEditing ? selectedRubric!.id : Date.now().toString(),
-      name: newRubric.name,
-      description: newRubric.description,
-      projectTypes: newRubric.projectTypes || [],
-      criteria: newRubric.criteria,
-      maxPoints: 100,
-      createdBy: user.email,
-      createdAt: isEditing ? selectedRubric!.createdAt : new Date().toISOString().split('T')[0],
-      isActive: true
-    };
-
-    if (isEditing) {
-      setRubrics(prev => prev.map(r => r.id === rubric.id ? rubric : r));
-    } else {
-      setRubrics(prev => [...prev, rubric]);
+    if (!authToken) {
+      toast({ title: "Error", description: "Not authenticated", variant: "destructive" });
+      return;
     }
 
-    setIsCreating(false);
-    setIsEditing(false);
-    setSelectedRubric(null);
-    setNewRubric({ name: "", description: "", projectTypes: [], criteria: [] });
-    setActiveTab("list");
+    const criteriaPayload: CriterionInput[] = newRubric.criteria.map((c) => ({
+      name: c.name,
+      description: c.description,
+      ploIds: c.ploIds,
+      weight: c.weight,
+      levels: c.levels.map((l) => ({
+        name: l.name,
+        description: l.description,
+        points: l.points,
+      })),
+    }));
 
-    toast({
-      title: "Success",
-      description: isEditing ? "Rubric updated successfully" : "Rubric created successfully",
-    });
+    setIsSaving(true);
+    try {
+      if (isEditing && selectedRubric) {
+        await updateRubric(parseInt(selectedRubric.id), {
+          name: newRubric.name,
+          description: newRubric.description,
+          projectTypes: newRubric.projectTypes ?? [],
+          criteria: criteriaPayload,
+          maxPoints: 100,
+        }, authToken);
+      } else {
+        await createRubric({
+          name: newRubric.name,
+          description: newRubric.description,
+          projectTypes: newRubric.projectTypes ?? [],
+          criteria: criteriaPayload,
+          maxPoints: 100,
+        }, authToken);
+      }
+
+      await loadRubrics();
+      setIsCreating(false);
+      setIsEditing(false);
+      setSelectedRubric(null);
+      setNewRubric({ name: "", description: "", projectTypes: [], criteria: [] });
+      setActiveTab("list");
+
+      toast({
+        title: "Success",
+        description: isEditing ? "Rubric updated successfully" : "Rubric created successfully",
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message ?? "Failed to save rubric", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const editRubric = (rubric: Rubric) => {
+  const editRubric = (rubric: LocalRubric) => {
     setSelectedRubric(rubric);
-    setNewRubric(rubric);
+    setNewRubric({
+      name: rubric.name,
+      description: rubric.description,
+      projectTypes: rubric.projectTypes,
+      criteria: rubric.criteria,
+    });
     setIsEditing(true);
     setIsCreating(true);
     setActiveTab("create");
   };
 
-  const deleteRubric = (id: string) => {
-    setRubrics(prev => prev.filter(r => r.id !== id));
-    toast({
-      title: "Success",
-      description: "Rubric deleted successfully",
-    });
+  const handleDeleteRubric = async (id: string) => {
+    if (!authToken) return;
+    try {
+      await deleteRubricApi(parseInt(id), authToken);
+      await loadRubrics();
+      toast({ title: "Success", description: "Rubric deleted successfully" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message ?? "Failed to delete rubric", variant: "destructive" });
+    }
   };
 
-  const toggleRubricStatus = (id: string) => {
-    setRubrics(prev => prev.map(r => 
-      r.id === id ? { ...r, isActive: !r.isActive } : r
-    ));
+  const handleToggleRubricStatus = async (id: string) => {
+    if (!authToken) return;
+    try {
+      await toggleRubricStatusApi(parseInt(id), authToken);
+      await loadRubrics();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message ?? "Failed to toggle status", variant: "destructive" });
+    }
   };
 
   const getPLODisplayName = (ploId: string) => {
@@ -259,6 +306,35 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">Only coordinators can manage rubrics.</p>
+      </div>
+    );
+  }
+
+  if (setupRequired) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-3xl font-bold">Rubric Management</h2>
+          <p className="text-muted-foreground">Create and manage evaluation rubrics linked to PLOs</p>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-amber-600">⚠ Database Setup Required</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>The rubric tables have not been created in the database yet. To enable rubric management, run the database migration:</p>
+            <div className="rounded-md bg-muted p-4 font-mono text-sm space-y-2">
+              <p className="font-semibold">Option 1 — Run the migration script:</p>
+              <code className="block">cd backend/api && node scripts/runMigration.js</code>
+              <p className="font-semibold mt-4">Option 2 — Paste SQL in the Supabase Dashboard:</p>
+              <p>Open the <a href="https://supabase.com/dashboard/project/pkgqgvwkvcuigxbwrmkj/sql/new" target="_blank" rel="noreferrer" className="text-blue-600 underline">SQL Editor</a> and run the contents of:</p>
+              <code className="block">backend/database/migrations/20260223_add_rubrics.sql</code>
+            </div>
+            <Button onClick={() => void loadRubrics()} variant="outline">
+              Retry Connection
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -299,6 +375,16 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
               <CardTitle>Evaluation Rubrics</CardTitle>
             </CardHeader>
             <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                  <span>Loading rubrics…</span>
+                </div>
+              ) : rubrics.length === 0 ? (
+                <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  No rubrics yet. Create your first rubric to get started.
+                </div>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -392,14 +478,14 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            onClick={() => toggleRubricStatus(rubric.id)}
+                            onClick={() => handleToggleRubricStatus(rubric.id)}
                           >
                             {rubric.isActive ? "Deactivate" : "Activate"}
                           </Button>
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            onClick={() => deleteRubric(rubric.id)}
+                            onClick={() => handleDeleteRubric(rubric.id)}
                             className="text-destructive hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -410,6 +496,7 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
                   ))}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -673,8 +760,12 @@ export const RubricManagement = ({ user }: RubricManagementProps) => {
                 >
                   Cancel
                 </Button>
-                <Button onClick={saveRubric}>
-                  <Save className="w-4 h-4 mr-2" />
+                <Button onClick={saveRubric} disabled={isSaving}>
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
                   {isEditing ? "Update Rubric" : "Save Rubric"}
                 </Button>
               </div>

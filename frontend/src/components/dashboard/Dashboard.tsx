@@ -8,6 +8,7 @@ import { UserManagement } from "@/components/admin/UserManagement";
 import { ReportingDashboard } from "@/components/reports/ReportingDashboard";
 import { ProjectDetailView } from "@/components/projects/ProjectDetailView";
 import { RubricManagement } from "@/components/rubrics/RubricManagement";
+import { RubricViewer } from "@/components/rubrics/RubricViewer";
 import { CourseManagement } from "@/components/courses/CourseManagement";
 import { AdvisorCoursePlaceholder } from "@/components/courses/AdvisorCoursePlaceholder";
 import { StudentRosterUpload } from "@/components/courses/StudentRosterUpload";
@@ -230,7 +231,9 @@ export const Dashboard = ({ user, authToken, onLogout }: DashboardProps) => {
       case "reports":
         return <ReportingDashboard user={user} />;
       case "rubrics":
-        return <RubricManagement user={user} />;
+        return user.role === "coordinator"
+          ? <RubricManagement user={user} authToken={authToken} />
+          : <RubricViewer user={user} authToken={authToken} />;
       case "account-details":
         return <AccountDetails user={user} authToken={authToken} />;
       default:

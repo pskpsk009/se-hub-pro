@@ -7,6 +7,7 @@ import coursesRouter from "./courses";
 import analyticsRouter from "./analytics";
 import studentsRouter from "./students";
 import commentsRouter from "./comments";
+import rubricsRouter from "./rubrics";
 
 export const registerRoutes = (app: Express): void => {
   app.use("/health", healthRouter);
@@ -17,4 +18,5 @@ export const registerRoutes = (app: Express): void => {
   app.use("/analytics", analyticsRouter);
   app.use("/students", studentsRouter);
   app.use("/comments", commentsRouter);
+  app.use("/rubrics", rubricsRouter);
 };
