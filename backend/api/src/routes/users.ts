@@ -16,7 +16,7 @@ import { getSupabaseClient } from '../services/supabaseClient';
 
 const usersRouter = Router();
 
-const ASSIGNABLE_ROLES: UserRole[] = ['student', 'advisor'];
+const ASSIGNABLE_ROLES: UserRole[] = ['student', 'advisor', 'coordinator'];
 
 const extractAuthErrorCode = (error: unknown): string | undefined => {
   if (typeof error === 'object' && error !== null && 'code' in error) {
@@ -77,7 +77,7 @@ const sanitizeUser = (record: UserRecord | null | undefined) => {
  *                 format: password
  *               role:
  *                 type: string
- *                 enum: [student, advisor]
+ *                 enum: [student, advisor, coordinator]
  *     responses:
  *       '201':
  *         description: User created successfully.
@@ -100,7 +100,7 @@ usersRouter.post('/', verifyFirebaseAuth, requireCoordinator, async (req: Authed
   }
 
   if (!parsedRole) {
-    res.status(400).json({ error: 'Coordinators cannot be created through this endpoint.' });
+    res.status(400).json({ error: 'Invalid role. Allowed roles: student, advisor, coordinator.' });
     return;
   }
 
@@ -239,11 +239,6 @@ usersRouter.patch('/:id', verifyFirebaseAuth, requireCoordinator, async (req: Au
 
   if (!existingUser) {
     res.status(404).json({ error: 'User not found.' });
-    return;
-  }
-
-  if (existingUser.role === 'coordinator') {
-    res.status(403).json({ error: 'Coordinators cannot be modified through this endpoint.' });
     return;
   }
 
