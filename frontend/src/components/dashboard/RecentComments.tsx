@@ -46,7 +46,7 @@ export const RecentComments = ({
     queryKey: ["all-comments"],
     queryFn: async () => {
       if (!authToken) return [];
-      const response = await fetch("http://localhost:5001/comments/all", {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"}/comments/all`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },

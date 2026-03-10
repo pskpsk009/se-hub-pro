@@ -251,7 +251,7 @@ export const StudentRosterUpload = ({
       // Send sign-in link emails to students
       try {
         const API_BASE =
-          import.meta.env.VITE_API_URL || "http://localhost:5001";
+          import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
         const emailResponse = await fetch(`${API_BASE}/students/bulk-upload`, {
           method: "POST",
           headers: {

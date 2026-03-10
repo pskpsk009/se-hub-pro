@@ -412,7 +412,7 @@ export const ProjectDetailView = ({
     queryFn: async () => {
       if (!authToken) return [];
       const response = await fetch(
-        `http://localhost:5001/comments/${project.id}`,
+        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"}/comments/${project.id}`,
         {
           headers: {
             Authorization: `Bearer ${authToken}`,
@@ -438,7 +438,7 @@ export const ProjectDetailView = ({
     mutationFn: async (commentText: string) => {
       if (!authToken) throw new Error("No auth token");
       const response = await fetch(
-        `http://localhost:5001/comments/${project.id}`,
+        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"}/comments/${project.id}`,
         {
           method: "POST",
           headers: {
@@ -473,7 +473,7 @@ export const ProjectDetailView = ({
     mutationFn: async (commentId: number) => {
       if (!authToken) throw new Error("No auth token");
       const response = await fetch(
-        `http://localhost:5001/comments/${commentId}`,
+        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"}/comments/${commentId}`,
         {
           method: "DELETE",
           headers: {
