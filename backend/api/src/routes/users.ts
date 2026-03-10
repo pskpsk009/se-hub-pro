@@ -21,7 +21,7 @@ import { sendWelcomeEmail } from "../services/emailService";
 
 const usersRouter = Router();
 
-const ASSIGNABLE_ROLES: UserRole[] = ["student", "advisor"];
+const ASSIGNABLE_ROLES: UserRole[] = ["student", "advisor", "coordinator"];
 
 const extractAuthErrorCode = (error: unknown): string | undefined => {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -112,7 +112,7 @@ usersRouter.post(
 
     if (!parsedRole) {
       res.status(400).json({
-        error: "Coordinators cannot be created through this endpoint.",
+        error: "Invalid role. Allowed roles: student, advisor, coordinator.",
       });
       return;
     }
@@ -279,12 +279,7 @@ usersRouter.patch(
       return;
     }
 
-    if (existingUser.role === "coordinator") {
-      res.status(403).json({
-        error: "Coordinators cannot be modified through this endpoint.",
-      });
-      return;
-    }
+
 
     let firebaseUid: string;
 
@@ -431,12 +426,7 @@ usersRouter.delete(
       return;
     }
 
-    if (existingUser.role === "coordinator") {
-      res.status(403).json({
-        error: "Coordinators cannot be removed through this endpoint.",
-      });
-      return;
-    }
+
 
     const supabase = getSupabaseAdminClient();
 
