@@ -47,6 +47,7 @@ export const Sidebar = ({ user, currentView, onViewChange }: SidebarProps) => {
           ...commonItems,
           { id: "advisor-course", label: "Course", icon: GraduationCap },
           { id: "rubrics", label: "Rubrics", icon: ClipboardList },
+          { id: "account-details", label: "Account Detail", icon: UserCog },
         ];
       case "coordinator":
         return [
@@ -57,6 +58,7 @@ export const Sidebar = ({ user, currentView, onViewChange }: SidebarProps) => {
           { id: "rubrics", label: "Rubric Management", icon: ClipboardList },
           { id: "reports", label: "Reports", icon: BarChart3 },
           ...commonItems,
+          { id: "account-details", label: "Account Detail", icon: UserCog },
         ];
       default:
         return commonItems;

@@ -3,7 +3,7 @@ import {
   PostgrestResponse,
   PostgrestSingleResponse,
 } from "@supabase/supabase-js";
-import { getSupabaseClient } from "./supabaseClient";
+import { getSupabaseAdminClient } from "./supabaseClient";
 import { UserRecord } from "./userService";
 
 export type ProjectType = "academic" | "competition" | "service" | "other";
@@ -89,7 +89,12 @@ export interface ProjectMetadata {
   award?: string;
   courseCode?: string;
   completionDate?: string;
-  files?: Array<{ name: string; size?: string; type?: string; storagePath?: string }>;
+  files?: Array<{
+    name: string;
+    size?: string;
+    type?: string;
+    storagePath?: string;
+  }>;
   grade?: string;
   [key: string]: unknown;
 }
@@ -136,9 +141,9 @@ const parseMetadata = (payload: unknown): ProjectMetadata | null => {
 };
 
 export const createProjectRecord = async (
-  input: CreateProjectRecordInput
+  input: CreateProjectRecordInput,
 ): Promise<PostgrestSingleResponse<ProjectRecord>> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   return supabase
     .from("project")
@@ -164,13 +169,13 @@ export const createProjectRecord = async (
 
 export const upsertProjectStudents = async (
   projectId: number,
-  studentIds: number[]
+  studentIds: number[],
 ): Promise<PostgrestResponse<TeamMemberRecord>> => {
   if (studentIds.length === 0) {
     return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
   }
 
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const records = Array.from(new Set(studentIds)).map((studentId) => ({
     project_id: projectId,
@@ -185,15 +190,15 @@ export const upsertProjectStudents = async (
 
 export const insertProjectLinks = async (
   projectId: number,
-  links: string[]
+  links: string[],
 ): Promise<PostgrestResponse<LinkRecord>> => {
   if (links.length === 0) {
     return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
   }
 
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
   const sanitizedLinks = links.filter(
-    (link) => typeof link === "string" && link.trim().length > 0
+    (link) => typeof link === "string" && link.trim().length > 0,
   );
 
   if (sanitizedLinks.length === 0) {
@@ -208,15 +213,15 @@ export const insertProjectLinks = async (
 };
 
 export const deleteProjectLinks = async (
-  projectId: number
+  projectId: number,
 ): Promise<PostgrestResponse<LinkRecord>> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
   return supabase.from("link").delete().eq("project_id", projectId).select();
 };
 
 export const replaceProjectLinks = async (
   projectId: number,
-  links: string[]
+  links: string[],
 ): Promise<{ error: PostgrestError | null }> => {
   const del = await deleteProjectLinks(projectId);
   if (del.error) return { error: del.error };
@@ -225,13 +230,13 @@ export const replaceProjectLinks = async (
 };
 
 const hydrateProjectsWithRelations = async (
-  projects: ProjectRecord[]
+  projects: ProjectRecord[],
 ): Promise<ProjectQueryResult> => {
   if (projects.length === 0) {
     return { data: [], error: null };
   }
 
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
   const projectIds = projects.map((project) => project.id);
 
   const teamMembersResponse = await supabase
@@ -244,14 +249,14 @@ const hydrateProjectsWithRelations = async (
   }
 
   const studentIds = Array.from(
-    new Set((teamMembersResponse.data ?? []).map((item) => item.student_id))
+    new Set((teamMembersResponse.data ?? []).map((item) => item.student_id)),
   );
   const advisorIds = Array.from(
     new Set(
       projects
         .map((project) => project.advisor_id)
-        .filter((id): id is number => typeof id === "number")
-    )
+        .filter((id): id is number => typeof id === "number"),
+    ),
   );
   const allUserIds = Array.from(new Set([...studentIds, ...advisorIds]));
 
@@ -267,7 +272,7 @@ const hydrateProjectsWithRelations = async (
     }
 
     userMap = new Map(
-      (usersResponse.data ?? []).map((user) => [user.id, user as UserRecord])
+      (usersResponse.data ?? []).map((user) => [user.id, user as UserRecord]),
     );
   }
 
@@ -315,7 +320,7 @@ const hydrateProjectsWithRelations = async (
   const data: ProjectWithRelations[] = projects.map((project) => ({
     project,
     advisor: project.advisor_id
-      ? userMap.get(project.advisor_id) ?? null
+      ? (userMap.get(project.advisor_id) ?? null)
       : null,
     students: teamMembersMap.get(project.id) ?? [],
     metadata: parseMetadata(project.comment_student),
@@ -327,7 +332,7 @@ const hydrateProjectsWithRelations = async (
 };
 
 const wrapProjectsResponse = async (
-  response: PostgrestResponse<ProjectRecord>
+  response: PostgrestResponse<ProjectRecord>,
 ): Promise<ProjectQueryResult> => {
   if (response.error) {
     return { data: null, error: response.error };
@@ -337,9 +342,9 @@ const wrapProjectsResponse = async (
 };
 
 export const listProjectsForStudent = async (
-  studentId: number
+  studentId: number,
 ): Promise<ProjectQueryResult> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const membershipResponse = await supabase
     .from("team_member")
@@ -351,7 +356,7 @@ export const listProjectsForStudent = async (
   }
 
   const projectIds = (membershipResponse.data ?? []).map(
-    (record) => record.project_id
+    (record) => record.project_id,
   );
 
   if (projectIds.length === 0) {
@@ -368,9 +373,9 @@ export const listProjectsForStudent = async (
 };
 
 export const listProjectsForAdvisor = async (
-  advisorId: number
+  advisorId: number,
 ): Promise<ProjectQueryResult> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const projectsResponse = await supabase
     .from("project")
@@ -382,9 +387,9 @@ export const listProjectsForAdvisor = async (
 };
 
 export const listProjectsByCourse = async (
-  courseId: number
+  courseId: number,
 ): Promise<ProjectQueryResult> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const projectsResponse = await supabase
     .from("project")
@@ -396,7 +401,7 @@ export const listProjectsByCourse = async (
 };
 
 export const listAllProjects = async (): Promise<ProjectQueryResult> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const projectsResponse = await supabase
     .from("project")
@@ -407,7 +412,7 @@ export const listAllProjects = async (): Promise<ProjectQueryResult> => {
 };
 
 export const listApprovedProjects = async (): Promise<ProjectQueryResult> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const projectsResponse = await supabase
     .from("project")
@@ -419,9 +424,9 @@ export const listApprovedProjects = async (): Promise<ProjectQueryResult> => {
 };
 
 export const getProjectById = async (
-  projectId: number
+  projectId: number,
 ): Promise<ProjectQueryResult> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const projectsResponse = await supabase
     .from("project")
@@ -441,9 +446,9 @@ export const getProjectById = async (
 export const updateProjectGrade = async (
   projectId: number,
   grade: string | null,
-  metadata: ProjectMetadata | null
+  metadata: ProjectMetadata | null,
 ): Promise<PostgrestSingleResponse<ProjectRecord>> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const updatedMetadata: ProjectMetadata = { ...(metadata ?? {}) };
 
@@ -471,9 +476,9 @@ export const updateProjectGrade = async (
 
 export const updateProjectRecord = async (
   projectId: number,
-  input: UpdateProjectRecordInput
+  input: UpdateProjectRecordInput,
 ): Promise<PostgrestSingleResponse<ProjectRecord>> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const payload: Partial<ProjectRecord> = {};
 
@@ -514,9 +519,9 @@ export const updateProjectFeedback = async (
   payload: {
     advisorFeedback?: string | null;
     coordinatorFeedback?: string | null;
-  }
+  },
 ): Promise<PostgrestSingleResponse<ProjectRecord>> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const updatePayload: Partial<ProjectRecord> = {};
 
@@ -538,9 +543,9 @@ export const updateProjectFeedback = async (
 
 export const updateProjectStatus = async (
   projectId: number,
-  status: ProjectStatus
+  status: ProjectStatus,
 ): Promise<PostgrestSingleResponse<ProjectRecord>> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   return supabase
     .from("project")

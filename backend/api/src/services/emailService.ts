@@ -136,3 +136,70 @@ export async function sendBulkSignInLinks(
 
   return { success, failed, errors };
 }
+
+/**
+ * Send a welcome email via Nodemailer (Gmail SMTP) when a coordinator manually creates a new user.
+ */
+export async function sendWelcomeEmail(input: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+}): Promise<void> {
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:8080";
+
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || "SE Project Hub <pskpsk009@gmail.com>",
+    to: input.email,
+    subject: "Your SE Project Hub Account Has Been Created",
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #4F46E5; color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .header h1 { margin: 0; font-size: 24px; }
+          .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; padding: 14px 28px; background: #4F46E5; color: white !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+          .info { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4F46E5; }
+          .info p { margin: 8px 0; }
+          .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Welcome to SE Project Hub!</h1>
+          </div>
+          <div class="content">
+            <p>Hello <strong>${input.name}</strong>,</p>
+            <p>An account has been created for you on SE Project Hub. Here are your login details:</p>
+
+            <div class="info">
+              <p><strong>Your Credentials:</strong></p>
+              <p>📧 <strong>Email:</strong> ${input.email}</p>
+              <p>🔑 <strong>Password:</strong> <code style="background:#eef2ff;padding:4px 8px;border-radius:4px;font-size:16px;letter-spacing:1px;">${input.password}</code></p>
+              <p>👤 <strong>Role:</strong> ${input.role.charAt(0).toUpperCase() + input.role.slice(1)}</p>
+            </div>
+
+            <div style="text-align: center;">
+              <a href="${frontendUrl}" class="button">Sign In Now</a>
+            </div>
+
+            <p style="color:#b91c1c;font-weight:bold;">⚠️ Please change your password after your first sign-in via Account Detail.</p>
+
+            <div class="footer">
+              <p>If you didn't expect this email, please ignore it.</p>
+              <p>— SE Project Hub Team</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  });
+
+  console.log("Welcome email sent to", input.email);
+}

@@ -1,10 +1,7 @@
-const resolveBaseUrl = (): string => {
-  const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
-  const configured = meta.env?.VITE_API_BASE_URL ?? "http://localhost:5001";
-  return configured.replace(/\/$/, "");
-};
-
-const API_BASE_URL = resolveBaseUrl();
+// precompute base URL during build/runtime
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001"
+).replace(/\/$/, "");
 
 const buildUrl = (path: string): string => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -51,9 +48,14 @@ const handleJsonResponse = async <T>(response: Response): Promise<T> => {
   }
 
   if (!response.ok) {
-    const message = body && typeof body === "object" && body !== null && "error" in body && typeof (body as { error?: string }).error === "string"
-      ? (body as { error: string }).error
-      : "Request failed";
+    const message =
+      body &&
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof (body as { error?: string }).error === "string"
+        ? (body as { error: string }).error
+        : "Request failed";
     throw new Error(message);
   }
 
@@ -63,8 +65,8 @@ const handleJsonResponse = async <T>(response: Response): Promise<T> => {
 export const fetchCourses = async (token: string): Promise<CourseDto[]> => {
   const response = await fetch(buildUrl("/courses"), {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const body = await handleJsonResponse<CoursesResponseBody>(response);
@@ -76,14 +78,17 @@ export const fetchCourses = async (token: string): Promise<CourseDto[]> => {
   return body.courses;
 };
 
-export const createCourse = async (payload: CreateCoursePayload, token: string): Promise<CourseDto> => {
+export const createCourse = async (
+  payload: CreateCoursePayload,
+  token: string,
+): Promise<CourseDto> => {
   const response = await fetch(buildUrl("/courses"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 
   const body = await handleJsonResponse<CourseResponseBody>(response);
@@ -95,22 +100,28 @@ export const createCourse = async (payload: CreateCoursePayload, token: string):
   return body.course;
 };
 
-export const deleteCourse = async (courseId: string, token: string): Promise<void> => {
+export const deleteCourse = async (
+  courseId: string,
+  token: string,
+): Promise<void> => {
   const response = await fetch(buildUrl(`/courses/${courseId}`), {
     method: "DELETE",
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   await handleJsonResponse<{ message: string }>(response);
 };
 
-export const fetchCourseProjects = async (courseId: string, token: string): Promise<any[]> => {
+export const fetchCourseProjects = async (
+  courseId: string,
+  token: string,
+): Promise<any[]> => {
   const response = await fetch(buildUrl(`/courses/${courseId}/projects`), {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const body = await handleJsonResponse<{ projects?: any[] }>(response);
@@ -138,46 +149,53 @@ export interface UpsertRosterInputDto {
 
 export const fetchCourseRoster = async (
   courseId: string,
-  token: string
+  token: string,
 ): Promise<RosterEntryDto[]> => {
   const response = await fetch(buildUrl(`/courses/${courseId}/roster`), {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
-  const body = await handleJsonResponse<{ roster?: RosterEntryDto[] }>(response);
+  const body = await handleJsonResponse<{ roster?: RosterEntryDto[] }>(
+    response,
+  );
   return body?.roster || [];
 };
 
 export const upsertCourseRoster = async (
   courseId: string,
   students: UpsertRosterInputDto[],
-  token: string
+  token: string,
 ): Promise<RosterEntryDto[]> => {
   const response = await fetch(buildUrl(`/courses/${courseId}/roster`), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ students })
+    body: JSON.stringify({ students }),
   });
 
-  const body = await handleJsonResponse<{ roster?: RosterEntryDto[] }>(response);
+  const body = await handleJsonResponse<{ roster?: RosterEntryDto[] }>(
+    response,
+  );
   return body?.roster || [];
 };
 
 export const deleteCourseRosterEntry = async (
   courseId: string,
   studentId: string,
-  token: string
+  token: string,
 ): Promise<void> => {
-  const response = await fetch(buildUrl(`/courses/${courseId}/roster/${encodeURIComponent(studentId)}`), {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
+  const response = await fetch(
+    buildUrl(`/courses/${courseId}/roster/${encodeURIComponent(studentId)}`),
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
   await handleJsonResponse<{ success: boolean }>(response);
 };

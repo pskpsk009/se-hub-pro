@@ -1,36 +1,38 @@
-import { env } from '../config/env';
-import { getSupabaseClient } from './supabaseClient';
+import { env } from "../config/env";
+import { getSupabaseAdminClient } from "./supabaseClient";
 
-export const getStorageClient = () => getSupabaseClient().storage;
+export const getStorageClient = () => getSupabaseAdminClient().storage;
 
 export const getBucket = (bucketName?: string) => {
-	const resolvedBucket = bucketName ?? env.supabaseStorageBucket;
+  const resolvedBucket = bucketName ?? env.supabaseStorageBucket;
 
-	if (!resolvedBucket) {
-		throw new Error('Supabase storage bucket name not provided. Set SUPABASE_STORAGE_BUCKET or pass a bucket name.');
-	}
+  if (!resolvedBucket) {
+    throw new Error(
+      "Supabase storage bucket name not provided. Set SUPABASE_STORAGE_BUCKET or pass a bucket name.",
+    );
+  }
 
-	return getStorageClient().from(resolvedBucket);
+  return getStorageClient().from(resolvedBucket);
 };
 
 /**
  * Upload a file to Supabase Storage.
  */
 export const uploadFile = async (
-	storagePath: string,
-	fileBuffer: Buffer,
-	contentType: string,
-	bucketName?: string,
+  storagePath: string,
+  fileBuffer: Buffer,
+  contentType: string,
+  bucketName?: string,
 ): Promise<void> => {
-	const bucket = getBucket(bucketName);
-	const { error } = await bucket.upload(storagePath, fileBuffer, {
-		contentType,
-		upsert: true,
-	});
+  const bucket = getBucket(bucketName);
+  const { error } = await bucket.upload(storagePath, fileBuffer, {
+    contentType,
+    upsert: true,
+  });
 
-	if (error) {
-		throw new Error(`Supabase storage upload failed: ${error.message}`);
-	}
+  if (error) {
+    throw new Error(`Supabase storage upload failed: ${error.message}`);
+  }
 };
 
 /**
@@ -38,34 +40,39 @@ export const uploadFile = async (
  * Returns a Blob of the file content.
  */
 export const downloadFile = async (
-	storagePath: string,
-	bucketName?: string,
+  storagePath: string,
+  bucketName?: string,
 ): Promise<Blob> => {
-	const bucket = getBucket(bucketName);
-	const { data, error } = await bucket.download(storagePath);
+  const bucket = getBucket(bucketName);
+  const { data, error } = await bucket.download(storagePath);
 
-	if (error || !data) {
-		throw new Error(`Supabase storage download failed: ${error?.message ?? 'No data returned'}`);
-	}
+  if (error || !data) {
+    throw new Error(
+      `Supabase storage download failed: ${error?.message ?? "No data returned"}`,
+    );
+  }
 
-	return data;
+  return data;
 };
 
 /**
  * Generate a signed URL for a file (valid for the given number of seconds).
  */
 export const getSignedUrl = async (
-	storagePath: string,
-	expiresInSeconds = 3600,
-	bucketName?: string,
+  storagePath: string,
+  expiresInSeconds = 3600,
+  bucketName?: string,
 ): Promise<string> => {
-	const bucket = getBucket(bucketName);
+  const bucket = getBucket(bucketName);
 
-	const { data, error } = await bucket.createSignedUrl(storagePath, expiresInSeconds);
+  const { data, error } = await bucket.createSignedUrl(
+    storagePath,
+    expiresInSeconds,
+  );
 
-	if (error) {
-		throw new Error(`Signed URL generation failed: ${error.message}`);
-	}
+  if (error) {
+    throw new Error(`Signed URL generation failed: ${error.message}`);
+  }
 
-	return data.signedUrl;
+  return data.signedUrl;
 };

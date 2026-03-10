@@ -1,16 +1,54 @@
-
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Edit, Trash2, User, Upload, FileText, Download, Eye, EyeOff } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  User,
+  Upload,
+  FileText,
+  Download,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { ApiError, CreateUserRequest, UpdateUserRequest, createUser, deleteUser, listUsers, updateUser } from "@/services/userApi";
+import {
+  ApiError,
+  CreateUserRequest,
+  UpdateUserRequest,
+  createUser,
+  deleteUser,
+  listUsers,
+  updateUser,
+} from "@/services/userApi";
 
 interface User {
   id: string;
@@ -42,20 +80,23 @@ export const UserManagement = ({ user }: UserManagementProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
     role: "",
     password: "",
     studentId: "",
-    advisorName: ""
+    advisorName: "",
   });
 
-  const filteredUsers = users.filter(u => {
+  const filteredUsers = users.filter((u) => {
     const name = (u.name ?? "").toLowerCase();
     const email = (u.email ?? "").toLowerCase();
-    const matchesSearch = name.includes(searchTerm.toLowerCase()) ||
-                         email.includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      name.includes(searchTerm.toLowerCase()) ||
+      email.includes(searchTerm.toLowerCase());
     const matchesRole = roleFilter === "all" || u.role === roleFilter;
     return matchesSearch && matchesRole;
   });
@@ -73,7 +114,9 @@ export const UserManagement = ({ user }: UserManagementProps) => {
     }
   };
 
-  const getAuthToken = () => localStorage.getItem("firebaseAuthToken") ?? localStorage.getItem("authToken");
+  const getAuthToken = () =>
+    localStorage.getItem("firebaseAuthToken") ??
+    localStorage.getItem("authToken");
 
   const fetchUsers = useCallback(async () => {
     if (user.role !== "coordinator") {
@@ -96,15 +139,18 @@ export const UserManagement = ({ user }: UserManagementProps) => {
 
     try {
       const apiUsers = await listUsers(token);
-      setUsers(apiUsers.map((apiUser) => ({
-        id: String(apiUser.id),
-        name: apiUser.name,
-        email: apiUser.email,
-        role: apiUser.role,
-        status: "Active"
-      })));
+      setUsers(
+        apiUsers.map((apiUser) => ({
+          id: String(apiUser.id),
+          name: apiUser.name,
+          email: apiUser.email,
+          role: apiUser.role,
+          status: "Active",
+        })),
+      );
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Failed to load users.";
+      const message =
+        error instanceof ApiError ? error.message : "Failed to load users.";
       toast({
         title: "Error",
         description: message,
@@ -153,7 +199,14 @@ export const UserManagement = ({ user }: UserManagementProps) => {
       await createUser(payload, token);
 
       await fetchUsers();
-      setNewUser({ name: "", email: "", role: "", password: "", studentId: "", advisorName: "" });
+      setNewUser({
+        name: "",
+        email: "",
+        role: "",
+        password: "",
+        studentId: "",
+        advisorName: "",
+      });
       setShowPassword(false);
       setIsAddUserOpen(false);
       setEditingUser(null);
@@ -163,7 +216,10 @@ export const UserManagement = ({ user }: UserManagementProps) => {
         description: "User added successfully",
       });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Failed to add user. Please try again.";
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : "Failed to add user. Please try again.";
       toast({
         title: "Error",
         description: message,
@@ -199,11 +255,23 @@ export const UserManagement = ({ user }: UserManagementProps) => {
 
     try {
       await deleteUser(numericId, token);
-      setUsers(prev => prev.filter(u => u.id !== userId));
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setSelectedUsers((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
 
       if (editingUser?.id === userId) {
         setEditingUser(null);
-        setNewUser({ name: "", email: "", role: "", password: "", studentId: "", advisorName: "" });
+        setNewUser({
+          name: "",
+          email: "",
+          role: "",
+          password: "",
+          studentId: "",
+          advisorName: "",
+        });
       }
 
       toast({
@@ -211,13 +279,87 @@ export const UserManagement = ({ user }: UserManagementProps) => {
         description: "User deleted successfully",
       });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Failed to delete user.";
+      const message =
+        error instanceof ApiError ? error.message : "Failed to delete user.";
       toast({
         title: "Error",
         description: message,
         variant: "destructive",
       });
     }
+  };
+
+  const toggleSelectUser = (userId: string) => {
+    setSelectedUsers((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.size === filteredUsers.length) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(filteredUsers.map((u) => u.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedUsers.size === 0) return;
+
+    const token = getAuthToken();
+    if (!token) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in again to delete users.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsDeletingBulk(true);
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (const userId of selectedUsers) {
+      const numericId = Number(userId);
+      if (!Number.isInteger(numericId) || numericId <= 0) {
+        errors.push(`Invalid user ID: ${userId}`);
+        continue;
+      }
+      try {
+        await deleteUser(numericId, token);
+        successCount++;
+      } catch (error) {
+        const message =
+          error instanceof ApiError ? error.message : "Unknown error";
+        errors.push(`User ${userId}: ${message}`);
+      }
+    }
+
+    if (successCount > 0) {
+      await fetchUsers();
+      toast({
+        title: "Success",
+        description: `Deleted ${successCount} user(s) successfully.`,
+      });
+    }
+
+    if (errors.length > 0) {
+      toast({
+        title: "Some deletions failed",
+        description: errors.join("; "),
+        variant: "destructive",
+      });
+    }
+
+    setSelectedUsers(new Set());
+    setIsDeletingBulk(false);
   };
 
   const handleEditUser = (userToEdit: any) => {
@@ -228,7 +370,7 @@ export const UserManagement = ({ user }: UserManagementProps) => {
       role: userToEdit.role,
       password: userToEdit.password || "",
       studentId: userToEdit.studentId || "",
-      advisorName: userToEdit.advisorName || ""
+      advisorName: userToEdit.advisorName || "",
     });
   };
 
@@ -311,14 +453,24 @@ export const UserManagement = ({ user }: UserManagementProps) => {
       setEditingUser(null);
       setIsAddUserOpen(false);
       setShowPassword(false);
-      setNewUser({ name: "", email: "", role: "", password: "", studentId: "", advisorName: "" });
+      setNewUser({
+        name: "",
+        email: "",
+        role: "",
+        password: "",
+        studentId: "",
+        advisorName: "",
+      });
 
       toast({
         title: "Success",
         description: "User updated successfully",
       });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Failed to update user. Please try again.";
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : "Failed to update user. Please try again.";
       toast({
         title: "Error",
         description: message,
@@ -360,39 +512,42 @@ export const UserManagement = ({ user }: UserManagementProps) => {
 
     try {
       const text = await csvFile.text();
-      const lines = text.split('\n').filter(line => line.trim() !== '');
-      
+      const lines = text.split("\n").filter((line) => line.trim() !== "");
+
       if (lines.length < 2) {
         toast({
           title: "Error",
-          description: "CSV file must contain headers and at least one data row",
+          description:
+            "CSV file must contain headers and at least one data row",
           variant: "destructive",
         });
         return;
       }
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const requiredHeaders = ['student_id', 'name', 'email'];
-      
-      const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+      const requiredHeaders = ["student_id", "name", "email"];
+
+      const missingHeaders = requiredHeaders.filter(
+        (h) => !headers.includes(h),
+      );
       if (missingHeaders.length > 0) {
         toast({
           title: "Error",
-          description: `Missing required columns: ${missingHeaders.join(', ')}`,
+          description: `Missing required columns: ${missingHeaders.join(", ")}`,
           variant: "destructive",
         });
         return;
       }
 
-      const studentIdIndex = headers.indexOf('student_id');
-      const nameIndex = headers.indexOf('name');
-      const emailIndex = headers.indexOf('email');
+      const studentIdIndex = headers.indexOf("student_id");
+      const nameIndex = headers.indexOf("name");
+      const emailIndex = headers.indexOf("email");
 
       const newStudents = [];
       const errors = [];
 
       for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
+        const values = lines[i].split(",").map((v) => v.trim());
         const studentId = values[studentIdIndex];
         const name = values[nameIndex];
         const email = values[emailIndex];
@@ -403,12 +558,16 @@ export const UserManagement = ({ user }: UserManagementProps) => {
         }
 
         if (!validateStudentId(studentId)) {
-          errors.push(`Row ${i + 1}: Invalid student ID format (should be 6831503xxx)`);
+          errors.push(
+            `Row ${i + 1}: Invalid student ID format (should be 6831503xxx)`,
+          );
           continue;
         }
 
         // Check if email already exists
-        const emailExists = users.some(u => u.email.toLowerCase() === email.toLowerCase());
+        const emailExists = users.some(
+          (u) => u.email.toLowerCase() === email.toLowerCase(),
+        );
         if (emailExists) {
           errors.push(`Row ${i + 1}: Email ${email} already exists`);
           continue;
@@ -419,7 +578,7 @@ export const UserManagement = ({ user }: UserManagementProps) => {
           name: name,
           email: email,
           role: "student" as const,
-          status: "Active"
+          status: "Active",
         });
       }
 
@@ -442,13 +601,14 @@ export const UserManagement = ({ user }: UserManagementProps) => {
 
       setCsvFile(null);
       setIsCsvUploadOpen(false);
-      
-      // Reset file input
-      const fileInput = document.getElementById('csv-file-input') as HTMLInputElement;
-      if (fileInput) {
-        fileInput.value = '';
-      }
 
+      // Reset file input
+      const fileInput = document.getElementById(
+        "csv-file-input",
+      ) as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = "";
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -464,12 +624,12 @@ export const UserManagement = ({ user }: UserManagementProps) => {
 6831503001,John Smith,john.smith@university.edu
 6831503002,Jane Doe,jane.doe@university.edu
 6831503003,Bob Johnson,bob.johnson@university.edu`;
-    
-    const blob = new Blob([sampleData], { type: 'text/csv' });
+
+    const blob = new Blob([sampleData], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'student_template.csv';
+    a.download = "student_template.csv";
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -498,13 +658,23 @@ export const UserManagement = ({ user }: UserManagementProps) => {
             <Upload className="w-4 h-4 mr-2" />
             Import Students
           </Button>
-          <Dialog open={isAddUserOpen || !!editingUser} onOpenChange={(open) => {
-            if (!open) {
-              setIsAddUserOpen(false);
-              setEditingUser(null);
-              setNewUser({ name: "", email: "", role: "", password: "", studentId: "", advisorName: "" });
-            }
-          }}>
+          <Dialog
+            open={isAddUserOpen || !!editingUser}
+            onOpenChange={(open) => {
+              if (!open) {
+                setIsAddUserOpen(false);
+                setEditingUser(null);
+                setNewUser({
+                  name: "",
+                  email: "",
+                  role: "",
+                  password: "",
+                  studentId: "",
+                  advisorName: "",
+                });
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <Button onClick={() => setIsAddUserOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -513,7 +683,9 @@ export const UserManagement = ({ user }: UserManagementProps) => {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{editingUser ? "Edit User" : "Add New User"}</DialogTitle>
+                <DialogTitle>
+                  {editingUser ? "Edit User" : "Add New User"}
+                </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
@@ -521,7 +693,9 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                   <Input
                     id="name"
                     value={newUser.name}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) =>
+                      setNewUser((prev) => ({ ...prev, name: e.target.value }))
+                    }
                     placeholder="Enter full name"
                   />
                 </div>
@@ -531,13 +705,20 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                     id="email"
                     type="email"
                     value={newUser.email}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={(e) =>
+                      setNewUser((prev) => ({ ...prev, email: e.target.value }))
+                    }
                     placeholder="Enter email address"
                   />
                 </div>
                 <div>
                   <Label htmlFor="role">Role *</Label>
-                  <Select value={newUser.role} onValueChange={(value) => setNewUser(prev => ({ ...prev, role: value }))}>
+                  <Select
+                    value={newUser.role}
+                    onValueChange={(value) =>
+                      setNewUser((prev) => ({ ...prev, role: value }))
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
@@ -555,7 +736,12 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                       <Input
                         id="studentId"
                         value={newUser.studentId}
-                        onChange={(e) => setNewUser(prev => ({ ...prev, studentId: e.target.value }))}
+                        onChange={(e) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            studentId: e.target.value,
+                          }))
+                        }
                         placeholder="Enter student id"
                       />
                     </div>
@@ -564,7 +750,12 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                       <Input
                         id="advisorName"
                         value={newUser.advisorName}
-                        onChange={(e) => setNewUser(prev => ({ ...prev, advisorName: e.target.value }))}
+                        onChange={(e) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            advisorName: e.target.value,
+                          }))
+                        }
                         placeholder="Enter Advisor name"
                       />
                     </div>
@@ -577,8 +768,17 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                       id="password"
                       type={showPassword ? "text" : "password"}
                       value={newUser.password}
-                      onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
-                      placeholder={editingUser ? "Enter new password" : "Enter initial password"}
+                      onChange={(e) =>
+                        setNewUser((prev) => ({
+                          ...prev,
+                          password: e.target.value,
+                        }))
+                      }
+                      placeholder={
+                        editingUser
+                          ? "Enter new password"
+                          : "Enter initial password"
+                      }
                       className="pr-10"
                     />
                     <Button
@@ -597,12 +797,19 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                   </div>
                 </div>
                 <div className="flex justify-end space-x-2">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={() => {
                       setIsAddUserOpen(false);
                       setEditingUser(null);
-                      setNewUser({ name: "", email: "", role: "", password: "", studentId: "", advisorName: "" });
+                      setNewUser({
+                        name: "",
+                        email: "",
+                        role: "",
+                        password: "",
+                        studentId: "",
+                        advisorName: "",
+                      });
                     }}
                   >
                     Cancel
@@ -617,7 +824,11 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                       }
                     }}
                   >
-                    {editingUser ? "Update User" : isSavingUser ? "Adding..." : "Add User"}
+                    {editingUser
+                      ? "Update User"
+                      : isSavingUser
+                        ? "Adding..."
+                        : "Add User"}
                   </Button>
                 </div>
               </div>
@@ -634,14 +845,18 @@ export const UserManagement = ({ user }: UserManagementProps) => {
           </DialogHeader>
           <div className="space-y-4">
             <div className="text-sm text-gray-600">
-              <p className="mb-2">Upload a CSV file with the following format:</p>
+              <p className="mb-2">
+                Upload a CSV file with the following format:
+              </p>
               <ul className="list-disc list-inside space-y-1">
                 <li>Headers: student_id, name, email</li>
                 <li>Student ID format: 6831503xxx (where xxx are 3 digits)</li>
-                <li>Example: 6831503001, John Smith, john.smith@university.edu</li>
+                <li>
+                  Example: 6831503001, John Smith, john.smith@university.edu
+                </li>
               </ul>
             </div>
-            
+
             <div>
               <Label htmlFor="csv-file-input">Select CSV File</Label>
               <Input
@@ -652,17 +867,17 @@ export const UserManagement = ({ user }: UserManagementProps) => {
                 className="mt-1"
               />
             </div>
-            
+
             {csvFile && (
               <div className="flex items-center space-x-2 text-sm text-green-600">
                 <FileText className="w-4 h-4" />
                 <span>Selected: {csvFile.name}</span>
               </div>
             )}
-            
+
             <div className="flex justify-end space-x-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsCsvUploadOpen(false);
                   setCsvFile(null);
@@ -683,7 +898,9 @@ export const UserManagement = ({ user }: UserManagementProps) => {
           <div className="flex justify-between items-center">
             <CardTitle>All Users</CardTitle>
             <div className="text-sm text-gray-500">
-              {isLoadingUsers ? "Loading users..." : `${filteredUsers.length} user(s) found`}
+              {isLoadingUsers
+                ? "Loading users..."
+                : `${filteredUsers.length} user(s) found`}
             </div>
           </div>
         </CardHeader>
@@ -712,10 +929,50 @@ export const UserManagement = ({ user }: UserManagementProps) => {
             </Select>
           </div>
 
+          {/* Bulk actions bar */}
+          {selectedUsers.size > 0 && (
+            <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">
+              <span className="text-sm font-medium text-red-800">
+                {selectedUsers.size} user(s) selected
+              </span>
+              <div className="flex items-center space-x-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedUsers(new Set())}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={isDeletingBulk}
+                  onClick={() => {
+                    void handleBulkDelete();
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  {isDeletingBulk
+                    ? "Deleting..."
+                    : `Delete ${selectedUsers.size} User(s)`}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Users Table */}
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      filteredUsers.length > 0 &&
+                      selectedUsers.size === filteredUsers.length
+                    }
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
@@ -726,52 +983,60 @@ export const UserManagement = ({ user }: UserManagementProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {!isLoadingUsers && filteredUsers.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center space-x-2">
-                      <User className="w-4 h-4 text-gray-400" />
-                      <span>{u.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{u.email}</TableCell>
-                  <TableCell>
-                    <Badge className={getRoleColor(u.role)}>
-                      {u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : "Unknown"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {u.studentId || "-"}
-                  </TableCell>
-                  <TableCell>
-                    {u.advisorName || "-"}
-                  </TableCell>
-                  <TableCell>
-                    {u.password ? "********" : "-"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEditUser(u)}
-                      >
-                        <Edit className="w-4 h-4 mr-1" />
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-red-600 hover:text-red-800"
-                        onClick={() => { void handleDeleteUser(u.id); }}
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {!isLoadingUsers &&
+                filteredUsers.map((u) => (
+                  <TableRow
+                    key={u.id}
+                    className={selectedUsers.has(u.id) ? "bg-red-50" : ""}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedUsers.has(u.id)}
+                        onCheckedChange={() => toggleSelectUser(u.id)}
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center space-x-2">
+                        <User className="w-4 h-4 text-gray-400" />
+                        <span>{u.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell>
+                      <Badge className={getRoleColor(u.role)}>
+                        {u.role
+                          ? u.role.charAt(0).toUpperCase() + u.role.slice(1)
+                          : "Unknown"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{u.studentId || "-"}</TableCell>
+                    <TableCell>{u.advisorName || "-"}</TableCell>
+                    <TableCell>{u.password ? "********" : "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditUser(u)}
+                        >
+                          <Edit className="w-4 h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600 hover:text-red-800"
+                          onClick={() => {
+                            void handleDeleteUser(u.id);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
 

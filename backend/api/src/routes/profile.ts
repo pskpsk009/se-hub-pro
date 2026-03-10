@@ -1,5 +1,7 @@
 import { Router, Response } from "express";
 import { AuthedRequest, verifyFirebaseAuth } from "../middleware/auth";
+import { validate } from "../middleware/validate";
+import { changePasswordSchema } from "../middleware/schemas";
 import { getSupabaseClient } from "../services/supabaseClient";
 import { adminAuth } from "../config/firebase";
 
@@ -86,6 +88,7 @@ profileRouter.get(
 profileRouter.post(
   "/change-password",
   verifyFirebaseAuth,
+  validate(changePasswordSchema),
   async (req: AuthedRequest, res: Response) => {
     const uid = req.user?.uid;
 
@@ -94,19 +97,7 @@ profileRouter.post(
       return;
     }
 
-    const { newPassword } = req.body ?? {};
-
-    if (!newPassword || typeof newPassword !== "string") {
-      res.status(400).json({ error: "newPassword is required." });
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      res
-        .status(400)
-        .json({ error: "Password must be at least 8 characters." });
-      return;
-    }
+    const { newPassword } = req.body;
 
     try {
       await adminAuth.updateUser(uid, { password: newPassword });

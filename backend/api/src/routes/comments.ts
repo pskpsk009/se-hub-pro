@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { AuthedRequest, verifyFirebaseAuth } from "../middleware/auth";
-import { getSupabaseClient } from "../services/supabaseClient";
+import { getSupabaseAdminClient } from "../services/supabaseClient";
 import { findUserByEmail } from "../services/userService";
 
 const commentsRouter = Router();
@@ -23,7 +23,7 @@ commentsRouter.get(
   verifyFirebaseAuth,
   async (req: AuthedRequest, res: Response) => {
     try {
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
 
       // Get all comments
       const { data: comments, error } = await supabase
@@ -39,35 +39,37 @@ commentsRouter.get(
       }
 
       // Get unique project IDs
-      const projectIds = [...new Set(comments?.map(c => c.project_id) || [])];
+      const projectIds = [...new Set(comments?.map((c) => c.project_id) || [])];
       const { data: projects } = await supabase
         .from("project")
         .select("id, title")
         .in("id", projectIds);
 
       // Get user details for each comment
-      const userIds = [...new Set(comments?.map(c => c.user_id) || [])];
+      const userIds = [...new Set(comments?.map((c) => c.user_id) || [])];
       const { data: users } = await supabase
         .from("user")
         .select("id, name, email, role")
         .in("id", userIds);
 
       // Map projects and users by ID for quick lookup
-      const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
-      const userMap = new Map(users?.map(u => [u.id, u]) || []);
+      const projectMap = new Map(projects?.map((p) => [p.id, p]) || []);
+      const userMap = new Map(users?.map((u) => [u.id, u]) || []);
 
       // Enrich comments with user and project details
-      const enrichedComments = comments?.map(comment => ({
-        id: comment.id,
-        project_id: comment.project_id,
-        project_title: projectMap.get(comment.project_id)?.title || "Unknown Project",
-        user_id: comment.user_id,
-        user_name: userMap.get(comment.user_id)?.name || "Unknown User",
-        user_email: userMap.get(comment.user_id)?.email || "",
-        user_role: userMap.get(comment.user_id)?.role || "user",
-        comment: comment.comment,
-        created_at: comment.created_at,
-      })) || [];
+      const enrichedComments =
+        comments?.map((comment) => ({
+          id: comment.id,
+          project_id: comment.project_id,
+          project_title:
+            projectMap.get(comment.project_id)?.title || "Unknown Project",
+          user_id: comment.user_id,
+          user_name: userMap.get(comment.user_id)?.name || "Unknown User",
+          user_email: userMap.get(comment.user_id)?.email || "",
+          user_role: userMap.get(comment.user_id)?.role || "user",
+          comment: comment.comment,
+          created_at: comment.created_at,
+        })) || [];
 
       res.json(enrichedComments);
     } catch (err) {
@@ -76,7 +78,7 @@ commentsRouter.get(
         error: err instanceof Error ? err.message : "Internal server error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -111,12 +113,13 @@ commentsRouter.get(
         return;
       }
 
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
 
       // Get comments with user information
       const { data: comments, error } = await supabase
         .from("project_comment")
-        .select(`
+        .select(
+          `
           id,
           comment,
           created_at,
@@ -127,7 +130,8 @@ commentsRouter.get(
             email,
             role
           )
-        `)
+        `,
+        )
         .eq("project_id", numericProjectId)
         .order("created_at", { ascending: true });
 
@@ -144,7 +148,7 @@ commentsRouter.get(
         error: err instanceof Error ? err.message : "Internal server error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -210,7 +214,7 @@ commentsRouter.post(
       }
 
       const user = userResponse.data;
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
 
       // Verify project exists
       const { data: project, error: projectError } = await supabase
@@ -244,7 +248,7 @@ commentsRouter.post(
             email,
             role
           )
-        `
+        `,
         )
         .single();
 
@@ -261,7 +265,7 @@ commentsRouter.post(
         error: err instanceof Error ? err.message : "Internal server error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -311,7 +315,7 @@ commentsRouter.delete(
       }
 
       const user = userResponse.data;
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
 
       // Get comment to verify ownership
       const { data: comment, error: fetchError } = await supabase
@@ -352,7 +356,7 @@ commentsRouter.delete(
         error: err instanceof Error ? err.message : "Internal server error",
       });
     }
-  }
+  },
 );
 
 export default commentsRouter;

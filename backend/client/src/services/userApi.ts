@@ -1,10 +1,7 @@
-const resolveBaseUrl = (): string => {
-  const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
-  const configured = meta.env?.VITE_API_BASE_URL ?? "http://localhost:5001";
-  return configured.replace(/\/$/, "");
-};
-
-const API_BASE_URL = resolveBaseUrl();
+// precompute base URL during build/runtime
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001"
+).replace(/\/$/, "");
 
 type ApiErrorResponse = { error?: string };
 
@@ -44,14 +41,17 @@ const buildUrl = (path: string): string => {
   return `${API_BASE_URL}${normalizedPath}`;
 };
 
-export const createUser = async (payload: CreateUserRequest, token: string): Promise<ApiUser> => {
+export const createUser = async (
+  payload: CreateUserRequest,
+  token: string,
+): Promise<ApiUser> => {
   const response = await fetch(buildUrl("/users"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 
   let body: CreateUserResponse | ApiErrorResponse | undefined;
@@ -62,12 +62,19 @@ export const createUser = async (payload: CreateUserRequest, token: string): Pro
   }
 
   if (!response.ok) {
-    const message = body && "error" in body && typeof body.error === "string" ? body.error : "Failed to create user.";
+    const message =
+      body && "error" in body && typeof body.error === "string"
+        ? body.error
+        : "Failed to create user.";
     throw new ApiError(message, response.status, body);
   }
 
   if (!body || !("user" in body)) {
-    throw new ApiError("User payload missing in response.", response.status, body);
+    throw new ApiError(
+      "User payload missing in response.",
+      response.status,
+      body,
+    );
   }
 
   return (body as CreateUserResponse).user;
@@ -81,8 +88,8 @@ interface ListUsersResponse {
 export const listUsers = async (token: string): Promise<ApiUser[]> => {
   const response = await fetch(buildUrl("/users"), {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   let body: ListUsersResponse | ApiErrorResponse | undefined;
@@ -94,7 +101,10 @@ export const listUsers = async (token: string): Promise<ApiUser[]> => {
   }
 
   if (!response.ok) {
-    const message = body && "error" in body && typeof body.error === "string" ? body.error : "Failed to fetch users.";
+    const message =
+      body && "error" in body && typeof body.error === "string"
+        ? body.error
+        : "Failed to fetch users.";
     throw new ApiError(message, response.status, body);
   }
 

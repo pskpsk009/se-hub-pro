@@ -1,5 +1,5 @@
 import { PostgrestError, PostgrestResponse } from "@supabase/supabase-js";
-import { getSupabaseClient } from "./supabaseClient";
+import { getSupabaseAdminClient } from "./supabaseClient";
 
 export interface RosterEntryRecord {
   id: number;
@@ -19,12 +19,12 @@ export interface UpsertRosterInput {
 }
 
 export const listRosterByCourse = async (
-  courseId: number
+  courseId: number,
 ): Promise<{
   data: RosterEntryRecord[] | null;
   error: PostgrestError | null;
 }> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
   const response = await supabase
     .from("course_roster")
     .select("*")
@@ -36,7 +36,7 @@ export const listRosterByCourse = async (
 
 export const upsertRosterEntries = async (
   courseId: number,
-  students: UpsertRosterInput[]
+  students: UpsertRosterInput[],
 ): Promise<{
   data: RosterEntryRecord[] | null;
   error: PostgrestError | null;
@@ -45,7 +45,7 @@ export const upsertRosterEntries = async (
     return { data: [], error: null };
   }
 
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
 
   const payload = students.map((s) => ({
     course_id: courseId,
@@ -79,12 +79,12 @@ export const upsertRosterEntries = async (
 
 export const deleteRosterEntry = async (
   courseId: number,
-  studentId: string
+  studentId: string,
 ): Promise<{
   data: RosterEntryRecord[] | null;
   error: PostgrestError | null;
 }> => {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseAdminClient();
   const response = await supabase
     .from("course_roster")
     .delete()

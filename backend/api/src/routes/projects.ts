@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import { AuthedRequest, verifyFirebaseAuth } from "../middleware/auth";
 import {
@@ -21,10 +21,35 @@ import {
   updateProjectRecord,
 } from "../services/projectService";
 import { findUserByEmail, UserRecord } from "../services/userService";
-import { getSupabaseClient } from "../services/supabaseClient";
+import { getSupabaseAdminClient } from "../services/supabaseClient";
 import { uploadFile, downloadFile } from "../services/storage";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "application/zip",
+]);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} is not allowed.`));
+    }
+  },
+});
 
 const projectsRouter = Router();
 
@@ -292,15 +317,11 @@ const formatProjectResponse = (record: ProjectWithRelations) => {
     : [];
 
   // Build a lookup of file_link → true for files in the file table
-  const fileTablePaths = new Set(
-    (uploadedFiles ?? []).map((f) => f.file_link),
-  );
+  const fileTablePaths = new Set((uploadedFiles ?? []).map((f) => f.file_link));
 
   // Merge: mark metadata files as downloadable if they have a storagePath in file table
   const files = metadataFiles.map((f: any) => {
-    const hasStorage = !!(
-      f.storagePath && fileTablePaths.has(f.storagePath)
-    );
+    const hasStorage = !!(f.storagePath && fileTablePaths.has(f.storagePath));
     return {
       name: f.name,
       size: f.size,
@@ -538,7 +559,7 @@ projectsRouter.post(
     const normalizedCourseCode = normalizeString(courseCode);
 
     if (normalizedCourseCode) {
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
       const { data: course } = await supabase
         .from("course")
         .select("id")
@@ -582,7 +603,7 @@ projectsRouter.post(
     );
 
     if (studentLinkResponse.error) {
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
       await supabase.from("project").delete().eq("id", projectId);
       res.status(500).json({ error: studentLinkResponse.error.message });
       return;
@@ -591,7 +612,7 @@ projectsRouter.post(
     const linkResponse = await insertProjectLinks(projectId, externalLinks);
 
     if (linkResponse.error) {
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
       try {
         await supabase.from("team_member").delete().eq("project_id", projectId);
       } catch (_error) {
@@ -670,7 +691,7 @@ projectsRouter.patch(
       return;
     }
 
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseAdminClient();
 
     // Coordinators can edit any project; students must be a team member
     if (role === "student") {
@@ -687,7 +708,9 @@ projectsRouter.patch(
       }
 
       if (!membership.data) {
-        res.status(403).json({ error: "You are not a member of this project." });
+        res
+          .status(403)
+          .json({ error: "You are not a member of this project." });
         return;
       }
     }
@@ -1247,7 +1270,25 @@ projectsRouter.get(
 projectsRouter.post(
   "/:id/files",
   verifyFirebaseAuth,
-  upload.array("files", 10),
+  (req: AuthedRequest, res: Response, next: NextFunction) => {
+    upload.array("files", 10)(req, res, (err: any) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          res
+            .status(413)
+            .json({ error: "File too large. Maximum size is 20 MB." });
+          return;
+        }
+        if (err.message?.includes("not allowed")) {
+          res.status(415).json({ error: err.message });
+          return;
+        }
+        res.status(400).json({ error: "File upload error." });
+        return;
+      }
+      next();
+    });
+  },
   async (req: AuthedRequest, res: Response) => {
     try {
       const projectId = parseInt(req.params.id, 10);
@@ -1257,7 +1298,16 @@ projectsRouter.post(
         return;
       }
 
-      const uploadedFiles = req.files as Express.Multer.File[] | undefined;
+      const uploadedFiles = (req as any).files as
+        | Array<{
+            fieldname: string;
+            originalname: string;
+            encoding: string;
+            mimetype: string;
+            size: number;
+            buffer: Buffer;
+          }>
+        | undefined;
 
       if (!uploadedFiles || uploadedFiles.length === 0) {
         res.status(400).json({ error: "No files provided." });
@@ -1266,7 +1316,11 @@ projectsRouter.post(
 
       // Verify the project exists
       const projectResult = await getProjectById(projectId);
-      if (projectResult.error || !projectResult.data || projectResult.data.length === 0) {
+      if (
+        projectResult.error ||
+        !projectResult.data ||
+        projectResult.data.length === 0
+      ) {
         res.status(404).json({ error: "Project not found." });
         return;
       }
@@ -1307,7 +1361,7 @@ projectsRouter.post(
       const updatedFiles = [...keptFiles, ...uploadedFileSummaries];
       const updatedMetadata = { ...existingMetadata, files: updatedFiles };
 
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient();
       await supabase
         .from("project")
         .update({ comment_student: JSON.stringify(updatedMetadata) })
@@ -1376,7 +1430,11 @@ projectsRouter.get(
 
       // Fetch project to find the file's storage path
       const projectResult = await getProjectById(projectId);
-      if (projectResult.error || !projectResult.data || projectResult.data.length === 0) {
+      if (
+        projectResult.error ||
+        !projectResult.data ||
+        projectResult.data.length === 0
+      ) {
         res.status(404).json({ error: "Project not found." });
         return;
       }
@@ -1397,7 +1455,7 @@ projectsRouter.get(
 
       // 2. Fall back to the file table
       if (!storagePath) {
-        const supabase = getSupabaseClient();
+        const supabase = getSupabaseAdminClient();
         const { data: fileRows } = await supabase
           .from("file")
           .select("file_link")
@@ -1418,7 +1476,10 @@ projectsRouter.get(
       }
 
       if (!storagePath) {
-        res.status(404).json({ error: "File not found. It may not have been uploaded to storage yet." });
+        res.status(404).json({
+          error:
+            "File not found. It may not have been uploaded to storage yet.",
+        });
         return;
       }
       const blob = await downloadFile(storagePath);

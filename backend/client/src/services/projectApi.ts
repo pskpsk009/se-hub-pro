@@ -1,10 +1,7 @@
-const resolveBaseUrl = (): string => {
-  const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
-  const configured = meta.env?.VITE_API_BASE_URL ?? "http://localhost:5001";
-  return configured.replace(/\/$/, "");
-};
-
-const API_BASE_URL = resolveBaseUrl();
+// precompute base URL during build/runtime
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001"
+).replace(/\/$/, "");
 
 interface ApiErrorResponse {
   error?: string;
@@ -112,7 +109,9 @@ export const fetchProjects = async (token: string): Promise<ApiProject[]> => {
     return [];
   }
 
-  return (body.projects ?? []).filter((project): project is ApiProject => Boolean(project));
+  return (body.projects ?? []).filter((project): project is ApiProject =>
+    Boolean(project),
+  );
 };
 
 /**
